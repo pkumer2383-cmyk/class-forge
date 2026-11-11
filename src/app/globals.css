@@ -1,0 +1,29 @@
+/* src/app/globals.css */
+@import "tailwindcss";
+
+html, body { height: 100%; }
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* The main scheduling app manages its own scroll containers and needs the
+   page itself to not scroll. Public info pages (about, contact, privacy,
+   terms) scroll normally. Apply this class on the body via the main app
+   layout. */
+body.cf-app-shell {
+  overflow: hidden;
+}
+
+/* Subtle scrollbar that doesn't fight the dark theme */
+.cf-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.cf-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+}
+.cf-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Calendar drag selection */
+.cf-no-select { user-select: none; -webkit-user-select: none; }
+
+/* Focus rings */
+.cf-focus:focus-visible { outline: 2px solid #0ea5e9; outline-offset: 2px; }

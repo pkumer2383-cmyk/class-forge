@@ -1,0 +1,32 @@
+{
+  "name": "classforge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "node --require ./scripts/node-readlink-eisdir-shim.cjs ./node_modules/next/dist/bin/next build --turbopack",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.103.0",
+    "next": "15.5.29",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.29",
+    "tailwindcss": "^4"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.32"
+    }
+  }
+}

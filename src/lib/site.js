@@ -1,0 +1,18 @@
+const DEFAULT_LOCAL_SITE_URL = 'http://localhost:3000';
+
+export function getSiteUrl() {
+  const raw =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.SITE_URL ||
+    (process.env.VERCEL_ENV === 'production' && process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : DEFAULT_LOCAL_SITE_URL);
+
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return DEFAULT_LOCAL_SITE_URL;
+  }
+}
