@@ -1,6 +1,27 @@
 # ClassForge
 
-Build a better college schedule. ClassForge is a Next.js app for planning a college class schedule: pick courses, block out work and life time, and let the scheduler find conflict-free combinations. Accounts, saved schedules and degree progress use Supabase.
+**Build your college class schedule in minutes instead of hours.**
+
+Picking classes each semester means juggling course sections, work shifts, practice, commutes and degree requirements, usually inside a slow university portal that only shows one term. ClassForge does the juggling for you: you tell it which courses you need and when you are busy, and it shows every schedule that fits with no time conflicts.
+
+Try it: **https://schedule-builder-repo.vercel.app** (public beta, free; no sign-in needed to explore).
+
+## What it does
+
+- **Finds schedules that work.** Add your courses, block out work and life time on the calendar, and flip through the conflict-free combinations.
+- **Respects how you like your week.** Prefer mornings, afternoons, days off or compact days.
+- **Uses your school's catalog.** Upload the course catalog or add courses by hand in the Data Manager.
+- **Tracks your degree.** Record completed courses, see what is left, forecast future semesters and calculate your GPA.
+- **Answers planning questions.** An optional AI advisor for course-planning questions.
+- **Keeps your data yours.** Guest mode works without an account; sign in only to save. No ads and no selling of user data.
+
+## How to use it
+
+1. Open the app and go to **Data Manager** to upload your catalog or add your courses.
+2. In **Builder**, pick the courses you want this term and drag on the calendar to block the times you are busy.
+3. Browse the schedules it finds, set your preferences, and save the one you like.
+
+ClassForge is built and maintained by one independent developer in Pennsylvania. It is a Next.js app; accounts, saved schedules and degree progress use Supabase.
 
 ## Stack
 
