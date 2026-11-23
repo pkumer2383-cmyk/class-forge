@@ -1,6 +1,5 @@
 import { runCourtroomValidation } from '../../../lib/coa/index.js';
 import { createCourtroomPersistence, loadCourtroomHistory } from '../../../lib/cvs/persistence.js';
-import { getAuthenticatedUser } from '../../../lib/supabase/api-auth.js';
 
 export const runtime = 'nodejs';
 
@@ -18,8 +17,7 @@ function withHistoryContext(body, history) {
 
 export async function GET() {
   try {
-    const user = await getAuthenticatedUser();
-    const history = await loadCourtroomHistory({ userId: user?.sub });
+    const history = await loadCourtroomHistory();
     return Response.json({ history });
   } catch (err) {
     return jsonError(
@@ -31,7 +29,6 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const user = await getAuthenticatedUser();
     let body;
     try {
       body = await request.json();
@@ -39,13 +36,13 @@ export async function POST(request) {
       return jsonError('Could not parse request body as JSON.', 400);
     }
 
-    const history = await loadCourtroomHistory({ userId: user?.sub });
-    const persistence = await createCourtroomPersistence({ userId: user?.sub || body?.userId || null });
+    const history = await loadCourtroomHistory();
+    const persistence = await createCourtroomPersistence();
     const result = await runCourtroomValidation(
       {
         ...body,
         context: withHistoryContext(body, history),
-        userId: user?.sub || body?.userId || null,
+        userId: null,
       },
       { persistence },
     );

@@ -1,7 +1,5 @@
 const PUBLIC_PATHS = new Set([
   '/',
-  '/login',
-  '/auth/callback',
   '/about',
   '/contact',
   '/cvs',

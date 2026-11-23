@@ -9,13 +9,13 @@ const DEFAULT_FORM = {
   ideaSummary:
     'A reusable service for the broader agent ecosystem with deterministic validation stages and structured verdicts.',
   successMetrics:
-    'The service can validate ideas through all stages, persist results when signed in, expose a single API, and produce EXECUTE, REVISE, or ABANDON verdicts.',
+    'The service can validate ideas through all stages, expose a single API, and produce EXECUTE, REVISE, or ABANDON verdicts.',
   knownConstraints:
-    'Keep the default implementation deterministic; reuse the existing Next.js and Supabase stack; no hardcoded secrets; no external side effects during validation.',
+    'Keep the default implementation deterministic; reuse the existing Next.js stack; no hardcoded secrets; no external side effects during validation.',
   keyAssumptions:
-    'The current app stack can host the service; the new route can be used anywhere in the app; user-scoped persistence is enough for MVP.',
+    'The current app stack can host the service; the new route can be used anywhere in the app; in-memory results are enough for MVP.',
   evidence:
-    'Existing POS runtime, Supabase auth, and server route patterns already exist in the repo.',
+    'Existing POS runtime and server route patterns already exist in the repo.',
   targetAudience: 'Forge internal operators and future agent workflows',
   timeline: 'Immediate MVP',
   budget: 'Low',
@@ -134,7 +134,7 @@ export default function CourtroomValidationClient() {
 
         {history?.durable === false ? (
           <div className="mb-5 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-            Guest mode is active. Results still validate, but durable history requires sign-in.
+            Results validate here but are not saved: courtroom history is not available in the open version.
           </div>
         ) : null}
 

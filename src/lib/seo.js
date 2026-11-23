@@ -3,7 +3,7 @@ import { BRAND } from './brand.js';
 
 export const SITE_NAME = BRAND.name;
 export const SITE_DESCRIPTION =
-  'Build a better college schedule with a fast planner for course catalogs, degree requirements, saved schedules, and academic advising.';
+  'Build your college class schedule in minutes. Add courses, block busy times, and see every schedule with no conflicts. Free to explore, no sign-in needed.';
 export const SITE_URL = getSiteUrl();
 export const DEFAULT_OG_IMAGE = BRAND.assets.instagramBackground;
 

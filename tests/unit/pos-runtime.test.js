@@ -10,7 +10,6 @@ import { isPosOwner, posOwnerEmails } from '../../src/lib/pos/access.js';
 import { computeConsensusRound } from '../../src/lib/pos/consensus.js';
 import { runPosOrchestration } from '../../src/lib/pos/orchestrator.js';
 import { createPosPersistence, loadPosProjectMemory } from '../../src/lib/pos/persistence.js';
-import { posPersistenceFallbackReason } from '../../src/lib/pos/persistence-errors.js';
 import { isRetryableError, withRetry } from '../../src/lib/pos/retry.js';
 import { buildPosRunTelemetry } from '../../src/lib/pos/telemetry.js';
 import { DEFAULT_CONSENSUS_SETTINGS } from '../../src/lib/pos/schemas.js';
@@ -138,34 +137,20 @@ test('telemetry summarizes the run in a structured packet', () => {
   assert.equal(telemetry.retryCount, 1);
 });
 
-test('persistence fallback distinguishes missing tables from auth failures', () => {
-  assert.equal(
-    posPersistenceFallbackReason(
-      { message: 'Could not find the table public.pos_runs in the schema cache' },
-      'pos_runs',
-    ),
-    'Supabase table pos_runs is missing or not exposed. Apply the POS migration.',
-  );
-  assert.equal(
-    posPersistenceFallbackReason({ code: '42501', message: 'permission denied for table pos_runs' }, 'pos_runs'),
-    'Sign in to persist POS audit records.',
-  );
-});
-
-test('Supabase persistence requires an authenticated owner id', async () => {
+test('POS persistence stays in memory in the open version', async () => {
   const persistence = await createPosPersistence();
   const status = persistence.status();
 
   assert.equal(status.mode, 'memory');
   assert.equal(status.durable, false);
-  assert.equal(status.reason, 'Sign in to persist POS audit records.');
+  assert.match(status.reason, /open version/);
 });
 
 test('project memory falls back for guest users', async () => {
   const memory = await loadPosProjectMemory();
 
   assert.equal(memory.durable, false);
-  assert.equal(memory.reason, 'Sign in to load durable project memory.');
+  assert.match(memory.reason, /open version/);
   assert.deepEqual(memory.recentRuns, []);
   assert.equal(memory.contextBlock, '');
 });
