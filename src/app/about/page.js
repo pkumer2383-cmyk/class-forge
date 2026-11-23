@@ -6,7 +6,7 @@ export const metadata = {
   ...buildMetadata({
     title: 'About',
     description:
-      'Learn what ClassForge is, who builds it, and how the schedule planner fits into the ClassForge product.',
+      'ClassForge helps you build your college class schedule in minutes: add your courses, block your busy times, and see every schedule with no conflicts. Learn who builds it.',
     path: '/about',
     keywords: ['about ClassForge', 'college schedule builder', 'student planning'],
   }),
@@ -17,7 +17,7 @@ export default function AboutPage() {
     <PageShell title="About ClassForge" lastUpdated="August 23, 2026">
       <H2>What this is</H2>
       <P>
-        ClassForge is a college schedule builder. You upload your school&apos;s course catalog and your degree requirements, and the app finds non-conflicting schedules that fit. It tracks the courses you&apos;ve already completed, lets you forecast future semesters, calculates your GPA, and includes an AI advisor for course-planning questions.
+        ClassForge helps you build your college class schedule in minutes instead of hours. You tell it which courses you need and when you are busy, and it shows every schedule that fits with no time conflicts. You can upload your school&apos;s course catalog and your degree requirements; it also tracks the courses you&apos;ve already completed, lets you forecast future semesters, calculates your GPA, and includes an AI advisor for course-planning questions.
       </P>
       <P>
         It exists because most college scheduling tools are clunky, locked inside university portals, or limited to a single term. Students deserve something faster and more flexible - something that lets them think across years, not just weeks.

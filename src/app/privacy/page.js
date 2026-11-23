@@ -7,7 +7,7 @@ export const metadata = {
   ...buildMetadata({
     title: 'Privacy Policy',
     description:
-      'Read how ClassForge collects, stores, and protects your schedule data, account details, and AI Advisor activity.',
+      'ClassForge has no accounts and no database: your schedule data stays in your own browser. Read what that means for your privacy.',
     path: '/privacy',
     keywords: ['privacy policy', 'student data', 'ClassForge privacy'],
   }),
@@ -15,7 +15,7 @@ export const metadata = {
 
 export default function PrivacyPage() {
   return (
-    <PageShell title="Privacy Policy" lastUpdated="August 23, 2026" attorneyReview>
+    <PageShell title="Privacy Policy" lastUpdated="November 22, 2026" attorneyReview>
       <H2>1. Who we are</H2>
       <P>
         ClassForge (&quot;we&quot;, &quot;us&quot;, &quot;the Service&quot;) is operated as an independent project based in Pennsylvania. You can reach us at <Strong>{BRAND.supportEmail}</Strong>.
@@ -26,24 +26,16 @@ export default function PrivacyPage() {
 
       <H2>2. The short version</H2>
       <UL>
-        <LI>We collect the minimum data needed to make the app work: your email (for sign-in), your course catalog, and your saved schedules.</LI>
+        <LI>ClassForge has no accounts and no sign-in. We do not collect your email or a password.</LI>
+        <LI>Your course catalog, saved schedules, record and settings are saved in your own browser (its local storage). They are not sent to us and we have no database that holds them.</LI>
         <LI>We do not sell your data. Ever.</LI>
-        <LI>We use Supabase to store your data and Google Gemini to power the AI Advisor. Both are described in detail below.</LI>
-        <LI>You can delete your data at any time by emailing us.</LI>
+        <LI>You can delete your data at any time by clearing this site&apos;s data in your browser.</LI>
         <LI>We don&apos;t currently show ads. If that changes, this policy will be updated and you&apos;ll see a notice in the app.</LI>
       </UL>
 
-      <H2>3. What we collect</H2>
-      <H3>3.1 Account information</H3>
-      <P>When you sign up, we collect:</P>
-      <UL>
-        <LI>Your email address (required, used for sign-in and account recovery)</LI>
-        <LI>If you sign in with Google: your Google ID and the name on your Google account</LI>
-        <LI>A hashed password (only if you sign up with email/password instead of Google)</LI>
-      </UL>
-
-      <H3>3.2 Schedule data</H3>
-      <P>When you use the app, we store:</P>
+      <H2>3. What is stored, and where</H2>
+      <H3>3.1 Schedule data stays in your browser</H3>
+      <P>When you use the app, your browser stores:</P>
       <UL>
         <LI>The course catalog you upload</LI>
         <LI>Your degree requirements and tracker</LI>
@@ -52,41 +44,25 @@ export default function PrivacyPage() {
         <LI>Your app preferences (theme, settings)</LI>
       </UL>
       <P>
-        This data is stored in our Supabase database under your user account and is only accessible to you when you sign in. Other users cannot see your data.
+        This data is kept in your browser&apos;s local storage on your device only. It is not uploaded to ClassForge, other users cannot see it, and it does not follow you to another browser or device. Clearing your browser&apos;s site data, or using a private window, removes it, so it cannot be recovered by us.
       </P>
 
-      <H3>3.3 AI Advisor conversations</H3>
+      <H3>3.2 Features that are off</H3>
       <P>
-        When you use the AI Advisor, your messages are sent to <Strong>Google&apos;s Gemini API</Strong> to generate a response. The conversation is held in your browser and clears when you refresh the page - we do not store chat history on our servers.
-      </P>
-      <P>
-        <Strong>Important:</Strong> ClassForge currently uses Google&apos;s Gemini free tier. Per Google&apos;s terms, prompts and responses on the free tier <Strong>may be used by Google to improve their AI models</Strong>. Do not paste sensitive personal information (student ID numbers, full legal names, social security numbers, medical or financial details) into the AI Advisor.
-      </P>
-      <P>
-        If we move to Google&apos;s paid tier in the future, that data-use clause goes away. We will update this policy if and when that change happens.
+        The open version of ClassForge has no accounts, so the features that needed them are switched off: sign-in, the AI Advisor, public reviews, and the contact form. If you email us, we receive what you choose to send.
       </P>
 
-      <H3>3.4 Reviews you submit</H3>
-      <P>
-        If you submit a review on the Feedback tab, the text of your review and the display name you choose are stored and made publicly visible to other ClassForge users. We do not display your email address.
-      </P>
-
-      <H3>3.5 Contact form submissions</H3>
-      <P>
-        If you use the contact form, we store the name, email, topic, and message you submitted in our database so we can read and reply.
-      </P>
-
-      <H3>3.6 Technical data</H3>
+      <H3>3.3 Technical data</H3>
       <P>
         Our hosting provider (Vercel) automatically logs basic technical information about each request: IP address, browser type, page accessed, and timestamp. These logs are retained for a short period (typically 30 days) for debugging and security purposes. If analytics are enabled, ClassForge may also use Google Analytics to understand aggregate product usage, such as page views and device/browser categories.
       </P>
 
-      <H2>4. How we use your data</H2>
+      <H2>4. How we use data</H2>
       <UL>
-        <LI><Strong>To run the app.</Strong> We use your data to display your schedules, calculate your GPA, generate forecasts, and remember your settings.</LI>
-        <LI><Strong>To respond to you.</Strong> If you contact us, we use your email to reply.</LI>
+        <LI><Strong>To run the app.</Strong> Your browser uses the data it stores to display your schedules, calculate your GPA, generate forecasts, and remember your settings.</LI>
+        <LI><Strong>To respond to you.</Strong> If you email us, we use your email address to reply.</LI>
         <LI><Strong>To debug and improve.</Strong> Server logs help us find bugs.</LI>
-        <LI><Strong>For legal compliance.</Strong> If required by law, we may need to retain or disclose data.</LI>
+        <LI><Strong>For legal compliance.</Strong> If required by law, we may need to retain or disclose the limited data we hold.</LI>
       </UL>
       <P>
         We do <Strong>not</Strong> use your data to:
@@ -95,53 +71,33 @@ export default function PrivacyPage() {
         <LI>Sell to third parties</LI>
         <LI>Share with advertisers</LI>
         <LI>Build advertising profiles</LI>
-        <LI>Train our own AI models (we don&apos;t have any)</LI>
+        <LI>Train AI models</LI>
       </UL>
 
       <H2>5. Third-party services we use</H2>
-      <H3>5.1 Supabase (database and authentication)</H3>
-      <P>
-        Supabase Inc. hosts our database and handles authentication. They are bound by their own privacy policy: <a href="https://supabase.com/privacy" style={{ color: '#a5b4fc' }} target="_blank" rel="noopener">supabase.com/privacy</a>.
-      </P>
-      <H3>5.2 Google (Gemini API and OAuth sign-in)</H3>
-      <P>
-        Google LLC provides the AI Advisor&apos;s underlying language model and (optionally) Google Sign-In. See Google&apos;s privacy policy: <a href="https://policies.google.com/privacy" style={{ color: '#a5b4fc' }} target="_blank" rel="noopener">policies.google.com/privacy</a>.
-      </P>
-      <H3>5.3 Vercel (web hosting)</H3>
+      <H3>5.1 Vercel (web hosting)</H3>
       <P>
         Vercel Inc. hosts the website. See Vercel&apos;s privacy policy: <a href="https://vercel.com/legal/privacy-policy" style={{ color: '#a5b4fc' }} target="_blank" rel="noopener">vercel.com/legal/privacy-policy</a>.
       </P>
-      <H3>5.4 Google Analytics (site analytics - if enabled)</H3>
+      <H3>5.2 Google Analytics (site analytics - if enabled)</H3>
       <P>
         If analytics are enabled, Google Analytics helps us measure aggregate usage and improve the product. See Google&apos;s privacy policy: <a href="https://policies.google.com/privacy" style={{ color: '#a5b4fc' }} target="_blank" rel="noopener">policies.google.com/privacy</a>.
       </P>
-      <H3>5.5 Stripe (payment processing - when paywall launches)</H3>
-      <P>
-        When the paid AI Advisor launches, Stripe Inc. will process payments. We never see your full credit card number - Stripe handles all of it. See Stripe&apos;s privacy policy: <a href="https://stripe.com/privacy" style={{ color: '#a5b4fc' }} target="_blank" rel="noopener">stripe.com/privacy</a>.
-      </P>
 
-      <H2>6. Cookies and tracking</H2>
+      <H2>6. Cookies and local storage</H2>
       <P>
-        ClassForge uses a small number of cookies that are strictly necessary to keep you signed in. If analytics are enabled, Google Analytics may set measurement cookies. We do not use advertising or social-media tracking cookies.
+        ClassForge does not use sign-in cookies. It uses your browser&apos;s local storage to keep your schedule data on your device. If analytics are enabled, Google Analytics may set measurement cookies. We do not use advertising or social-media tracking cookies.
       </P>
       <P>
         If we add advertising in the future, this section will be updated to disclose any third-party ad networks (e.g., Google AdSense) and the cookies they use. We will also add a cookie consent banner at that time.
       </P>
 
       <H2>7. Your rights</H2>
-      <P>You have the right to:</P>
-      <UL>
-        <LI><Strong>Access your data.</Strong> Email us and we&apos;ll send you a copy of everything stored under your account.</LI>
-        <LI><Strong>Correct your data.</Strong> Most data is editable directly in the app. For anything else, email us.</LI>
-        <LI><Strong>Delete your data.</Strong> Email us with subject &quot;Delete my account&quot; and we&apos;ll delete your account and all associated data within 30 days.</LI>
-        <LI><Strong>Export your data.</Strong> Same process - email us and we&apos;ll send a JSON export.</LI>
-        <LI><Strong>Opt out of AI Advisor data sharing.</Strong> The Advisor tab has a toggle labeled &quot;Share my data with the AI&quot;. Turning it off prevents your schedule data from being included in API calls to Google.</LI>
-      </UL>
       <P>
-        California residents have additional rights under the CCPA (right to know, right to delete, right to opt out of sale - though we don&apos;t sell data). Email us to exercise these rights.
+        Because your schedule data is stored only in your browser, you control it directly: you can view and edit it in the app, and delete it by clearing this site&apos;s data. We hold no copy of it to send, correct or delete.
       </P>
       <P>
-        EU/UK residents have rights under GDPR (data portability, right to erasure, right to object, etc.). Email us. Note that the AI Advisor free tier is regionally restricted by Google and may not be available in the EU/UK.
+        California residents have rights under the CCPA, and EU/UK residents under GDPR. For any request about the limited data we do hold (server logs, emails you send us), email us.
       </P>
 
       <H2>8. Children&apos;s privacy</H2>
@@ -165,19 +121,14 @@ export default function PrivacyPage() {
 
       <H2>10. Data retention</H2>
       <UL>
-        <LI><Strong>Account data</Strong> is retained as long as your account is active.</LI>
-        <LI><Strong>Reviews</Strong> remain visible until you delete them or close your account.</LI>
-        <LI><Strong>Contact form submissions</Strong> are retained for up to 2 years for support history, then deleted.</LI>
+        <LI><Strong>Schedule data</Strong> stays in your browser until you clear it. We never receive it.</LI>
+        <LI><Strong>Emails you send us</Strong> are kept for up to 2 years for support history, then deleted.</LI>
         <LI><Strong>Server logs</Strong> are retained for ~30 days.</LI>
-        <LI><Strong>AI Advisor chats</Strong> are not retained on our servers at all (see Section 3.3).</LI>
       </UL>
 
       <H2>11. Security</H2>
       <P>
-        We use industry-standard security measures: encrypted connections (HTTPS), encrypted storage at rest, password hashing, and database row-level security policies that prevent users from accessing each other&apos;s data.
-      </P>
-      <P>
-        That said, no system is perfectly secure. If a breach occurs that affects your data, we will notify you via the email address on your account within 72 hours of becoming aware of it.
+        The site is served over encrypted connections (HTTPS). Your schedule data never leaves your device, so it is only as private as the browser and device you use: anyone with access to that browser profile can see it.
       </P>
 
       <H2>12. Changes to this policy</H2>

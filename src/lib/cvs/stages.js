@@ -286,7 +286,7 @@ export function runAnalystsStage(rawSubmission, grandJury, prosecution) {
   const technicalAnalyst = {
     name: 'Technical Analyst',
     findings: [
-      'The implementation is feasible in the current Next.js + Supabase stack.',
+      'The implementation is feasible in the current Next.js stack.',
       'The design can be delivered as a reusable service with deterministic defaults and optional provider injection.',
       'Persistence, API, and UI integration are straightforward if they reuse the existing POS patterns.',
     ],
@@ -332,7 +332,7 @@ export function runAnalystsStage(rawSubmission, grandJury, prosecution) {
     name: 'Risk Analyst',
     findings: [
       'No secret handling is required for the default deterministic implementation.',
-      'The Supabase path should use owner-scoped or user-scoped RLS just like the POS tables.',
+      'Any future storage should be scoped to the owner or user.',
       'The service should not write external side effects during validation.',
     ],
     confidence: 0.9,

@@ -105,7 +105,7 @@ export function createClassForgeOperatingStatus({ projectMemory, generatedAt = i
 
   const blocker = projectMemory?.durable
     ? 'No blocking memory issue detected; next durable step is COA status persistence.'
-    : 'Durable project memory requires sign-in and applied Supabase POS migrations.';
+    : 'Durable project memory is not available in the open version.';
 
   const activeProjects = [
     {
@@ -225,7 +225,7 @@ export function createClassForgeOperatingStatus({ projectMemory, generatedAt = i
     makeCodexTask({
       title: 'Add COA Persistence Migration',
       prompt:
-        'Create a Supabase migration for Chief Operating Agent persistence tables after the API payload is approved: coa_projects, coa_project_links, coa_status_updates, coa_work_items, coa_delegations, coa_decisions, coa_codex_tasks, and coa_memory_updates.',
+        'Create a database migration for Chief Operating Agent persistence tables after the API payload is approved: coa_projects, coa_project_links, coa_status_updates, coa_work_items, coa_delegations, coa_decisions, coa_codex_tasks, and coa_memory_updates.',
       verification: 'Review RLS policies against the existing POS owner-scoped pattern.',
       approvalRequired: 'Yes - requires approving the separate coa_* table design.',
     }),

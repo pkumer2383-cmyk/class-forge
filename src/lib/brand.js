@@ -1,6 +1,6 @@
 export const BRAND = Object.freeze({
   name: 'ClassForge',
-  tagline: 'Build a better college schedule.',
+  tagline: 'Build your college class schedule in minutes.',
   category: 'college schedule builder',
   instagramHandle: '@classforge_official',
   socialDisplayName: 'ClassForge | College Schedule Builder',

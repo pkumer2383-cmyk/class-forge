@@ -3,14 +3,15 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "../lib/supabase";
-import { loadUserData, saveUserData, DEFAULT_USER_DATA } from "../lib/userData";
+import {
+  DEFAULT_USER_DATA,
+  loadLocalUserData,
+  saveLocalUserData,
+} from "../lib/userData";
 import { parseByFilename, parseTime, minutesToHHMM } from "../lib/parsers";
 import { generateSchedules, rankSchedules } from "../lib/scheduler";
 import { parseTrackerByFilename } from "../lib/trackerParser";
 import { parseTranscriptByFilename } from "../lib/transcriptParser";
-import { loadReviews, submitReview, deleteReview } from "../lib/reviews";
 import {
   createScheduleSnapshot,
   restoreScheduleSelection,
@@ -28,29 +29,17 @@ import {
   distributeForecastAcrossSemesters,
   nextAcademicSemester,
 } from "../lib/tracker";
-import Auth from "../components/Auth";
-
-// ============================================================
-// File-upload helpers (used by AdvisorTab)
-// ============================================================
-function readAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error("Could not read file"));
-    reader.readAsDataURL(file);
-  });
-}
-function stripDataUrlPrefix(dataUrl) {
-  if (!dataUrl) return "";
-  const idx = dataUrl.indexOf(",");
-  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
-}
-function formatBytes(bytes) {
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-}
+import {
+  applySampleData,
+  hasSampleData,
+  isSampleCourse,
+  stripSampleData,
+} from "../lib/sampleCatalog";
+import {
+  readWelcomeDismissed,
+  shouldShowWelcome,
+  writeWelcomeDismissed,
+} from "../lib/welcomeState";
 
 // ============================================================
 // Theme tokens
@@ -109,8 +98,6 @@ const SLOTS_PER_DAY = (CAL_END - CAL_START) / SLOT_MIN;
 const HEADER_PX = 32,
   TIME_COL_PX = 56;
 const DEFAULT_COURSE_COLOR = "#4F46E5";
-const GUEST_DRAFT_KEY = "class-forge.guest-draft.v1";
-const APPLY_GUEST_DRAFT_KEY = "class-forge.apply-guest-draft";
 
 const topPxFor = (m) => ((m - CAL_START) / SLOT_MIN) * SLOT_PX;
 const heightPxFor = (s, e) => ((e - s) / SLOT_MIN) * SLOT_PX;
@@ -120,12 +107,12 @@ const uid = () => "id_" + Math.random().toString(36).slice(2, 9);
 // Component
 // ============================================================
 export default function ClassForge() {
-  const router = useRouter();
-  const [session, setSession] = useState(null);
-  const [authOpen, setAuthOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // Starts true (hidden) so the welcome never flashes before localStorage is read.
+  const [welcomeDismissed, setWelcomeDismissed] = useState(true);
+  const [welcomeReopened, setWelcomeReopened] = useState(false);
+  // "idle" while saves to this browser succeed, "error" when storage is blocked or full.
   const [saveStatus, setSaveStatus] = useState("idle");
-  const saveTimeoutRef = useRef(null);
 
   // Persisted
   const [catalog, setCatalog] = useState(DEFAULT_USER_DATA.catalog);
@@ -168,17 +155,6 @@ export default function ClassForge() {
   const trackedStartRef = useRef(false);
   const trackedGenerationKeyRef = useRef(null);
 
-  // Advisor chat state — lifted here so it persists across tab switches.
-  // The Advisor tab is unmounted when you switch away; without lifting state
-  // up here, the chat history would be lost every time. The state lives only
-  // in memory (not in Supabase) so a page refresh clears it — this is by
-  // design for the free-tier privacy posture.
-  const [advisorMessages, setAdvisorMessages] = useState([]);
-  const [advisorInput, setAdvisorInput] = useState("");
-  const [advisorRetryAt, setAdvisorRetryAt] = useState(null);
-  const [advisorShareContext, setAdvisorShareContext] = useState(true);
-  const [advisorAttachments, setAdvisorAttachments] = useState([]); // {name, kind, text, dataUrl, mimeType}
-
   const theme = preferences.theme === "light" ? "light" : "dark";
   const t = T[theme];
 
@@ -210,34 +186,6 @@ export default function ClassForge() {
     setCourseColors(data.course_colors ?? DEFAULT_USER_DATA.course_colors);
   }
 
-  function readGuestDraft() {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = window.localStorage.getItem(GUEST_DRAFT_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return parsed?.data && typeof parsed.data === "object" ? parsed.data : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function prepareGuestDraftForSignIn() {
-    if (typeof window === "undefined" || session?.user?.id) return;
-    try {
-      window.localStorage.setItem(
-        GUEST_DRAFT_KEY,
-        JSON.stringify({ savedAt: new Date().toISOString(), data: currentUserDataSnapshot() }),
-      );
-      window.sessionStorage.setItem(APPLY_GUEST_DRAFT_KEY, "1");
-    } catch {}
-  }
-
-  function openAuth() {
-    prepareGuestDraftForSignIn();
-    setAuthOpen(true);
-  }
-
   // Apply body class so global CSS knows we're in the main app (which manages
   // its own scroll containers and doesn't want the page itself to scroll).
   // Info pages (/about, /contact, /privacy, /terms) don't have this class and
@@ -250,96 +198,22 @@ export default function ClassForge() {
     };
   }, []);
 
-  // ---- Auth ----
   useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (mounted) setSession(data.session ?? null);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) =>
-      setSession(s),
-    );
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
+    setWelcomeDismissed(readWelcomeDismissed());
   }, []);
 
-  // ---- Load ----
+  // ---- Load: everything lives in this browser's localStorage ----
   useEffect(() => {
-    let mounted = true;
-    const userId = session?.user?.id;
-    (async () => {
-      if (!userId) {
-        const draft = readGuestDraft();
-        if (draft && mounted) applyUserDataSnapshot(draft);
-        if (mounted) setLoaded(true);
-        return;
-      }
-      if (typeof window !== "undefined" && window.sessionStorage.getItem(APPLY_GUEST_DRAFT_KEY) === "1") {
-        const draft = readGuestDraft();
-        window.sessionStorage.removeItem(APPLY_GUEST_DRAFT_KEY);
-        if (draft) {
-          if (mounted) applyUserDataSnapshot(draft);
-          if (mounted) setLoaded(true);
-          return;
-        }
-      }
-      const d = await loadUserData(userId);
-      if (!mounted) return;
-      applyUserDataSnapshot(d);
-      setLoaded(true);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [session?.user?.id]);
+    const stored = loadLocalUserData();
+    if (stored) applyUserDataSnapshot(stored);
+    setLoaded(true);
+  }, []);
 
-  // ---- Autosave ----
+  // ---- Save to this browser on every change ----
   useEffect(() => {
-    if (!loaded || !session?.user?.id) return;
-    setSaveStatus("saving");
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(async () => {
-      const { error } = await saveUserData(session.user.id, {
-        catalog,
-        selected_courses: selectedCourseIds,
-        enabled_sections: enabledSections,
-        blocked_times: blockedTimes,
-        preferences,
-        saved_schedules: savedSchedules,
-        degree_tracker: degreeTracker,
-        completed_courses: completedCourses,
-        course_tags: courseTags,
-        course_colors: courseColors,
-      });
-      setSaveStatus(error ? "error" : "saved");
-      if (!error) setTimeout(() => setSaveStatus("idle"), 1200);
-    }, 700);
-    return () => clearTimeout(saveTimeoutRef.current);
-  }, [
-    catalog,
-    selectedCourseIds,
-    enabledSections,
-    blockedTimes,
-    preferences,
-    savedSchedules,
-    degreeTracker,
-    completedCourses,
-    courseTags,
-    courseColors,
-    loaded,
-    session?.user?.id,
-  ]);
-
-  useEffect(() => {
-    if (!loaded || session?.user?.id) return;
-    try {
-      window.localStorage.setItem(
-        GUEST_DRAFT_KEY,
-        JSON.stringify({ savedAt: new Date().toISOString(), data: currentUserDataSnapshot() }),
-      );
-    } catch {}
+    if (!loaded) return;
+    const ok = saveLocalUserData(currentUserDataSnapshot());
+    setSaveStatus(ok ? "idle" : "error");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     catalog,
@@ -353,7 +227,6 @@ export default function ClassForge() {
     courseTags,
     courseColors,
     loaded,
-    session?.user?.id,
   ]);
 
   // ---- Derived ----
@@ -401,10 +274,10 @@ export default function ClassForge() {
     trackedStartRef.current = true;
     trackEvent(ANALYTICS_EVENTS.scheduleBuilderStarted, {
       selected_course_count: selectedCourseIds.length,
-      signed_in: Boolean(session?.user?.id),
+      signed_in: false,
       ...getUtmParams(),
     });
-  }, [selectedCourseIds.length, session?.user?.id]);
+  }, [selectedCourseIds.length]);
 
   useEffect(() => {
     if (scheduleResult.reason !== "ok" || rankedSchedules.length === 0) return;
@@ -414,10 +287,10 @@ export default function ClassForge() {
     trackEvent(ANALYTICS_EVENTS.scheduleGenerated, {
       selected_course_count: selectedCourseIds.length,
       schedule_count: rankedSchedules.length,
-      signed_in: Boolean(session?.user?.id),
+      signed_in: false,
       ...getUtmParams(),
     });
-  }, [rankedSchedules.length, scheduleResult.reason, selectedCourseIds, session?.user?.id]);
+  }, [rankedSchedules.length, scheduleResult.reason, selectedCourseIds]);
 
   const projectedSelectedCourses = useMemo(() => {
     if (displaySchedule)
@@ -454,10 +327,6 @@ export default function ClassForge() {
       ...p,
       theme: p.theme === "dark" ? "light" : "dark",
     }));
-  }
-  async function signOut() {
-    await supabase.auth.signOut();
-    router.push("/");
   }
 
   function toggleCourse(id) {
@@ -510,12 +379,6 @@ export default function ClassForge() {
   }
 
   function saveCurrentSchedule() {
-    if (!session?.user?.id) {
-      setSaveStatus("signin");
-      openAuth();
-      return;
-    }
-
     const scheduleToSave = displaySchedule || null;
     if (!scheduleToSave) return;
     const suggested = suggestScheduleName();
@@ -559,7 +422,7 @@ export default function ClassForge() {
     trackEvent(ANALYTICS_EVENTS.scheduleSaved, {
       selected_course_count: selectedCourseIds.length,
       section_count: snapshot.sections.length,
-      signed_in: true,
+      signed_in: false,
       ...getUtmParams(),
     });
     setScheduleNameOpen(false);
@@ -579,7 +442,7 @@ export default function ClassForge() {
     setShowSavedDropdown(false);
     trackEvent(ANALYTICS_EVENTS.savedScheduleLoaded, {
       section_count: saved.sections?.length || 0,
-      signed_in: Boolean(session?.user?.id),
+      signed_in: false,
       ...getUtmParams(),
     });
   }
@@ -595,7 +458,7 @@ export default function ClassForge() {
     setShowSavedDropdown(false);
     trackEvent(ANALYTICS_EVENTS.savedSchedulePreviewed, {
       section_count: saved.sections?.length || 0,
-      signed_in: Boolean(session?.user?.id),
+      signed_in: false,
       ...getUtmParams(),
     });
   }
@@ -642,6 +505,36 @@ export default function ClassForge() {
       text: `Imported ${newCourses.length} courses across ${files.length} file(s).`,
     });
   }
+  // ----- First-visit welcome and sample data (guest mode only) -----
+  const showWelcome =
+    shouldShowWelcome({
+      authChecked: true,
+      loaded,
+      signedIn: false,
+      catalogLength: catalog.length,
+      dismissed: welcomeDismissed,
+    }) || welcomeReopened;
+  function closeWelcome() {
+    writeWelcomeDismissed();
+    setWelcomeDismissed(true);
+    setWelcomeReopened(false);
+  }
+  function loadSampleData() {
+    applyUserDataSnapshot(applySampleData(currentUserDataSnapshot()));
+    setCurrentScheduleIdx(0);
+    setTab("builder");
+    closeWelcome();
+  }
+  function clearSampleData() {
+    applyUserDataSnapshot(stripSampleData(currentUserDataSnapshot()));
+    setCurrentScheduleIdx(0);
+  }
+  function startWithOwnCourses() {
+    closeWelcome();
+    setTab("data");
+  }
+  const sampleLoaded = hasSampleData(catalog);
+
   function clearCatalog() {
     if (
       !confirm(
@@ -964,15 +857,12 @@ export default function ClassForge() {
         t={t}
         theme={theme}
         onToggleTheme={toggleTheme}
-        session={session}
-        onSignIn={openAuth}
-        onSignOut={signOut}
         saveStatus={saveStatus}
         tab={tab}
         setTab={setTab}
       />
 
-      {!session?.user?.id && (
+      {saveStatus === "error" && (
         <div
           className={
             "border-b px-4 py-2 text-xs " +
@@ -983,7 +873,7 @@ export default function ClassForge() {
               : "bg-sky-50 text-sky-900")
           }
         >
-          Guest mode: you can explore and edit, but saving requires sign-in.
+          Could not save to this browser (storage may be blocked or full). Your changes will be lost when you close the page.
         </div>
       )}
 
@@ -1018,7 +908,12 @@ export default function ClassForge() {
             degreeTracker={degreeTracker}
             progress={progress}
             courseColors={courseColors}
-            onOpenTutorial={() => setTutorialOpenFor("builder")}
+            onOpenTutorial={() => setWelcomeReopened(true)}
+            isGuest
+            sampleLoaded={sampleLoaded}
+            onTrySample={loadSampleData}
+            onClearSample={clearSampleData}
+            setTab={setTab}
           />
         )}
         {tab === "data" && (
@@ -1042,6 +937,10 @@ export default function ClassForge() {
             setCourseColor={setCourseColor}
             clearCourseColor={clearCourseColor}
             setTab={setTab}
+            isGuest
+            sampleLoaded={sampleLoaded}
+            onTrySample={loadSampleData}
+            onClearSample={clearSampleData}
             onOpenTutorial={() => setTutorialOpenFor("data")}
           />
         )}
@@ -1072,43 +971,6 @@ export default function ClassForge() {
             preferences={preferences}
             setPreferences={setPreferences}
             onOpenTutorial={() => setTutorialOpenFor("record")}
-          />
-        )}
-        {tab === "advisor" && (
-          <AdvisorTab
-            t={t}
-            theme={theme}
-            session={session}
-            onSignIn={openAuth}
-            onOpenTutorial={() => setTutorialOpenFor("advisor")}
-            appContext={{
-              catalog,
-              selectedCourseIds,
-              degreeTracker,
-              completedCourses,
-              progress,
-              gpa,
-              currentSchedule: displaySchedule,
-            }}
-            messages={advisorMessages}
-            setMessages={setAdvisorMessages}
-            input={advisorInput}
-            setInput={setAdvisorInput}
-            retryAt={advisorRetryAt}
-            setRetryAt={setAdvisorRetryAt}
-            shareContext={advisorShareContext}
-            setShareContext={setAdvisorShareContext}
-            attachments={advisorAttachments}
-            setAttachments={setAdvisorAttachments}
-          />
-        )}
-        {tab === "feedback" && (
-          <FeedbackTab
-            t={t}
-            theme={theme}
-            session={session}
-            onSignIn={openAuth}
-            onOpenTutorial={() => setTutorialOpenFor("feedback")}
           />
         )}
       </main>
@@ -1177,7 +1039,19 @@ export default function ClassForge() {
         </div>
       )}
 
-      <Auth open={authOpen} onClose={() => setAuthOpen(false)} theme={theme} />
+      <WelcomeIntro
+        t={t}
+        theme={theme}
+        open={showWelcome && tab === "builder"}
+        isGuest
+        onClose={closeWelcome}
+        onTrySample={loadSampleData}
+        onAddOwn={startWithOwnCourses}
+        onOpenTutorial={() => {
+          closeWelcome();
+          setTutorialOpenFor("builder");
+        }}
+      />
       <Tutorial
         t={t}
         theme={theme}
@@ -1197,9 +1071,6 @@ function TopBar({
   t,
   theme,
   onToggleTheme,
-  session,
-  onSignIn,
-  onSignOut,
   saveStatus,
   tab,
   setTab,
@@ -1222,8 +1093,6 @@ function TopBar({
           ["builder", "Builder"],
           ["data", "Data Manager"],
           ["record", "My Record"],
-          ["advisor", "Advisor"],
-          ["feedback", "Feedback"],
         ].map(([k, label]) => (
           <button
             key={k}
@@ -1246,12 +1115,12 @@ function TopBar({
       </nav>
       <div className="ml-auto flex items-center gap-3">
         <span className={"text-xs " + t.textMute}>
-          {!session && saveStatus !== "signin" && "Sign in to save"}
-          {!session && saveStatus === "signin" && "Sign in required"}
-          {saveStatus === "saving" && "Saving…"}
-          {saveStatus === "saved" && "Saved"}
-          {saveStatus === "error" && (
-            <span className="text-rose-400">Save error</span>
+          {saveStatus === "error" ? (
+            <span className="text-rose-400">Not saved</span>
+          ) : (
+            <span title="No account needed: your data stays on this device.">
+              Saved in this browser
+            </span>
           )}
         </span>
         <button
@@ -1266,36 +1135,6 @@ function TopBar({
         >
           {theme === "dark" ? "☀︎" : "☾"}
         </button>
-        {session ? (
-          <div className="flex items-center gap-2">
-            <span className={"text-xs " + t.textDim}>{session.user.email}</span>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className={
-                "text-xs px-3 py-1.5 rounded-md border " +
-                t.border2 +
-                " " +
-                (theme === "dark" ? "hover:bg-slate-800" : "hover:bg-slate-100")
-              }
-            >
-              Sign out
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onSignIn}
-            className={
-              "text-sm px-3 py-1.5 rounded-md font-semibold text-white " +
-              t.accentBg +
-              " " +
-              t.accentBgH
-            }
-          >
-            Sign in
-          </button>
-        )}
       </div>
     </header>
   );
@@ -1335,6 +1174,11 @@ function BuilderTab(props) {
     progress,
     courseColors,
     onOpenTutorial,
+    isGuest,
+    sampleLoaded,
+    onTrySample,
+    onClearSample,
+    setTab,
   } = props;
 
   const showReq =
@@ -1380,9 +1224,44 @@ function BuilderTab(props) {
         <div className="flex-1 min-h-0 overflow-auto cf-scroll">
           {!catalog.length && (
             <div className={"p-4 text-sm " + t.textDim}>
-              No courses yet. Go to{" "}
-              <span className={t.accent}>Data Manager</span> to upload your
-              catalog or add courses manually.
+              <p className={"font-semibold mb-1 " + t.text}>
+                Your course list is empty
+              </p>
+              <p className="mb-3">
+                This is where you pick the classes you want this term.
+                ClassForge then shows every schedule that fits with no time
+                conflicts.
+              </p>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTab("data")}
+                  className={
+                    "text-sm px-3 py-2 rounded-md font-semibold text-white " +
+                    t.accentBg +
+                    " " +
+                    t.accentBgH
+                  }
+                >
+                  Add my courses in Data Manager
+                </button>
+                {isGuest && (
+                  <button
+                    type="button"
+                    onClick={onTrySample}
+                    className={
+                      "text-sm px-3 py-2 rounded-md border " +
+                      t.border2 +
+                      " " +
+                      (theme === "dark"
+                        ? "hover:bg-slate-800"
+                        : "hover:bg-slate-100")
+                    }
+                  >
+                    Try it with sample courses
+                  </button>
+                )}
+              </div>
             </div>
           )}
           {catalog.map((c) => {
@@ -1428,6 +1307,7 @@ function BuilderTab(props) {
                       >
                         {c.credits} cr
                       </span>
+                      {isSampleCourse(c) && <SampleChip t={t} />}
                     </div>
                     <div className={"text-sm " + t.textDim + " truncate"}>
                       {c.title}
@@ -1490,6 +1370,9 @@ function BuilderTab(props) {
       </aside>
 
       <section className="flex-1 min-h-0 flex flex-col">
+        {sampleLoaded && isGuest && (
+          <SampleBanner t={t} theme={theme} onClear={onClearSample} />
+        )}
         <ScheduleBar
           t={t}
           theme={theme}
@@ -2259,6 +2142,10 @@ function DataTab(props) {
     clearCourseColor,
     setTab,
     onOpenTutorial,
+    isGuest,
+    sampleLoaded,
+    onTrySample,
+    onClearSample,
   } = props;
 
   const inputRef = useRef(null);
@@ -2275,9 +2162,16 @@ function DataTab(props) {
           )}
         </div>
         <p className={"text-sm mb-6 " + t.textDim}>
-          Upload a course catalog file, or add courses manually. Each course can
-          be color-coded for the calendar.
+          Your course catalog lives here: the classes and section times you can
+          choose from. Upload a catalog file or add courses manually, then open
+          Builder to see every schedule that fits. Each course can be
+          color-coded for the calendar.
         </p>
+        {sampleLoaded && isGuest && (
+          <div className="mb-4">
+            <SampleBanner t={t} theme={theme} onClear={onClearSample} />
+          </div>
+        )}
 
         <div
           onDragOver={(e) => {
@@ -2376,7 +2270,22 @@ function DataTab(props) {
             </button>
           </div>
           {!catalog.length && (
-            <div className={"text-sm " + t.textDim}>Empty.</div>
+            <div className={"text-sm " + t.textDim}>
+              <p className="mb-2">
+                No courses yet. Drop a catalog file above or add a course
+                manually, then open Builder and pick the ones you want this
+                term.
+              </p>
+              {isGuest && (
+                <button
+                  type="button"
+                  onClick={onTrySample}
+                  className={"text-sm " + t.accent + " hover:underline"}
+                >
+                  Or try it with sample courses
+                </button>
+              )}
+            </div>
           )}
           <ul className="text-sm space-y-1 max-h-96 overflow-auto cf-scroll">
             {catalog.slice(0, 200).map((c) => (
@@ -2408,7 +2317,10 @@ function DataTab(props) {
         >
           <h2 className="font-semibold mb-3">Saved schedules</h2>
           {!savedSchedules.length && (
-            <div className={"text-sm " + t.textDim}>None saved yet.</div>
+            <div className={"text-sm " + t.textDim}>
+              None saved yet. In Builder, open a schedule you like and choose
+              Save schedule. Saved schedules stay in this browser.
+            </div>
           )}
           <ul className="space-y-2">
             {savedSchedules.map((s) => (
@@ -2572,6 +2484,7 @@ function CatalogRow({
       }
     >
       <span className="font-mono w-20 shrink-0 text-xs">{course.code}</span>
+      {isSampleCourse(course) && <SampleChip t={t} />}
       <span className={t.textDim + " truncate flex-1 text-xs"}>
         {course.title}
       </span>
@@ -2946,7 +2859,9 @@ function MyRecordTab(props) {
           )}
         </div>
         <p className={"text-sm mb-6 " + t.textDim}>
-          Track your degree progress. This whole section is optional.
+          Your degree record: add the requirements your degree needs and the
+          courses you have finished, and ClassForge shows what is left and your
+          GPA. This whole section is optional; scheduling works without it.
         </p>
 
         {/* GPA + total credit summary */}
@@ -3102,7 +3017,10 @@ function MyRecordTab(props) {
             <RequirementForm t={t} theme={theme} onAdd={addRequirement} />
             {!degreeTracker.length && (
               <div className={"mt-3 text-sm " + t.textDim}>
-                No requirements yet.
+                No requirements yet. Requirements are the credit categories your
+                degree needs (for example core, major, electives). Upload a
+                degree audit above or add one here and ClassForge tracks what
+                is left.
               </div>
             )}
             <ul className="mt-3 space-y-2">
@@ -3309,967 +3227,6 @@ HIST 105,World History,3,P,Summer 2025`}
 }
 
 // ============================================================
-// Advisor tab — AI chat
-// ============================================================
-function AdvisorTab({
-  t,
-  theme,
-  session,
-  onSignIn,
-  onOpenTutorial,
-  appContext,
-  messages,
-  setMessages,
-  input,
-  setInput,
-  retryAt,
-  setRetryAt,
-  shareContext,
-  setShareContext,
-  attachments,
-  setAttachments,
-}) {
-  // Ephemeral state — fine to lose on tab switch since it represents
-  // in-flight requests, not user-visible history.
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [uploadError, setUploadError] = useState(null);
-  const [, forceTick] = useState(0);
-  const scrollerRef = useRef(null);
-  const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
-    }
-  }, [messages, busy]);
-
-  // Tick a state value every second while a retry timer is active so the
-  // countdown re-renders smoothly.
-  useEffect(() => {
-    if (!retryAt) return;
-    const interval = setInterval(() => {
-      forceTick((n) => n + 1);
-      if (Date.now() >= retryAt) {
-        setRetryAt(null);
-      }
-    }, 250);
-    return () => clearInterval(interval);
-  }, [retryAt, setRetryAt]);
-
-  const cooldownSeconds = retryAt
-    ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1000))
-    : 0;
-  const onCooldown = cooldownSeconds > 0;
-
-  // ---- File upload handler ----
-  // Supports text-based files (read as text) and images/PDFs (read as base64
-  // so Gemini can see them inline).
-  async function handleFileSelect(e) {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    setUploadError(null);
-    const newOnes = [];
-    for (const file of files) {
-      if (file.size > 5 * 1024 * 1024) {
-        setUploadError(
-          'File "' +
-            file.name +
-            '" is over 5MB. Try a smaller file or paste the relevant section as text.',
-        );
-        continue;
-      }
-      const isText =
-        /\.(txt|csv|tsv|json|md)$/i.test(file.name) ||
-        file.type.startsWith("text/");
-      const isImage = file.type.startsWith("image/");
-      const isPdf =
-        file.type === "application/pdf" || /\.pdf$/i.test(file.name);
-      try {
-        if (isText) {
-          const text = await file.text();
-          newOnes.push({
-            id: Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-            name: file.name,
-            kind: "text",
-            text: text.slice(0, 20000),
-            mimeType: file.type || "text/plain",
-            sizeBytes: file.size,
-          });
-        } else if (isImage || isPdf) {
-          const dataUrl = await readAsDataURL(file);
-          newOnes.push({
-            id: Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-            name: file.name,
-            kind: isImage ? "image" : "pdf",
-            dataUrl,
-            mimeType: file.type,
-            sizeBytes: file.size,
-          });
-        } else {
-          setUploadError(
-            '"' +
-              file.name +
-              '" is an unsupported file type. Use text, CSV, JSON, images, or PDFs.',
-          );
-        }
-      } catch (err) {
-        setUploadError('Could not read "' + file.name + '": ' + err.message);
-      }
-    }
-    if (newOnes.length) {
-      setAttachments((prev) => [...prev, ...newOnes]);
-    }
-    // Reset input so the same file can be re-selected later
-    e.target.value = "";
-  }
-
-  function removeAttachment(id) {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
-  }
-
-  async function send() {
-    if (!session?.user?.id) {
-      onSignIn();
-      return;
-    }
-    if (onCooldown) return;
-    const text = input.trim();
-    if ((!text && !attachments.length) || busy) return;
-    setError(null);
-
-    // Build the user message — text + attachment summaries embedded inline.
-    // For images/PDFs, we send them as separate parts to Gemini (multimodal).
-    // For text files, we inline their contents.
-    let messageContent = text;
-    const inlineTextChunks = [];
-    for (const a of attachments) {
-      if (a.kind === "text") {
-        inlineTextChunks.push(
-          "\n\n--- Attached file: " +
-            a.name +
-            " ---\n" +
-            a.text +
-            "\n--- end of " +
-            a.name +
-            " ---",
-        );
-      }
-    }
-    if (inlineTextChunks.length) {
-      messageContent =
-        (messageContent || "(attached file)") + inlineTextChunks.join("");
-    }
-
-    // The "user-visible" message (what shows in the chat scroller) keeps
-    // attachment chips, but the underlying text passed to the AI is the
-    // expanded form above.
-    const visibleMessage = {
-      role: "user",
-      content: text || "(see attached files)",
-      attachments: attachments.map((a) => ({ name: a.name, kind: a.kind })),
-    };
-    const apiMessage = {
-      role: "user",
-      content: messageContent,
-      parts: attachments
-        .filter((a) => a.kind === "image" || a.kind === "pdf")
-        .map((a) => ({
-          inline_data: {
-            mime_type: a.mimeType,
-            data: stripDataUrlPrefix(a.dataUrl),
-          },
-        })),
-    };
-
-    const newVisibleMessages = [...messages, visibleMessage];
-    setMessages(newVisibleMessages);
-    setInput("");
-    setAttachments([]);
-    setBusy(true);
-
-    // Build the request payload sent to /api/chat. The API route accepts a
-    // "messages" array where each message may have content (string) and an
-    // optional "parts" array for binary media.
-    const apiMessages = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-    apiMessages.push(apiMessage);
-
-    let payloadMessages = apiMessages;
-    if (shareContext) {
-      const summary = buildContextSummary();
-      if (summary) {
-        payloadMessages = [
-          { role: "user", content: summary },
-          {
-            role: "assistant",
-            content:
-              "Got it — I see your current ClassForge data. I'll reference it when I respond.",
-          },
-          ...apiMessages,
-        ];
-      }
-    }
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: payloadMessages }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setError(data.error || "HTTP " + res.status);
-        if (data.retryAfterSeconds && Number.isFinite(data.retryAfterSeconds)) {
-          setRetryAt(Date.now() + data.retryAfterSeconds * 1000);
-        }
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: data.reply || "(empty response)",
-            truncated: data.truncated === true,
-          },
-        ]);
-      }
-    } catch (e) {
-      setError("Network error: " + e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function buildContextSummary() {
-    if (!appContext) return null;
-    const parts = [];
-    const {
-      catalog,
-      selectedCourseIds,
-      degreeTracker,
-      completedCourses,
-      progress,
-      gpa,
-      currentSchedule,
-    } = appContext;
-
-    if (degreeTracker && degreeTracker.length) {
-      parts.push("DEGREE REQUIREMENTS:");
-      for (const r of degreeTracker) {
-        const cat =
-          progress && progress.categories
-            ? progress.categories.find((c) => c.id === r.id)
-            : null;
-        if (cat) {
-          parts.push(
-            "- " +
-              r.name +
-              ": " +
-              cat.total +
-              "/" +
-              r.credits +
-              " credits (" +
-              cat.status +
-              ")",
-          );
-        } else {
-          parts.push("- " + r.name + ": 0/" + r.credits + " credits required");
-        }
-      }
-    }
-
-    if (completedCourses && completedCourses.length) {
-      const completed = completedCourses.filter((c) => c.kind !== "forecast");
-      if (completed.length) {
-        parts.push("\nCOMPLETED COURSES:");
-        // Group by semester to keep summary compact
-        const bySem = {};
-        for (const c of completed) {
-          const sem = c.semester || "(no semester)";
-          (bySem[sem] = bySem[sem] || []).push(c);
-        }
-        for (const [sem, list] of Object.entries(bySem)) {
-          const courseList = list
-            .map((c) => c.code + (c.grade ? " (" + c.grade + ")" : ""))
-            .join(", ");
-          parts.push("- " + sem + ": " + courseList);
-        }
-      }
-      const forecast = completedCourses.filter((c) => c.kind === "forecast");
-      if (forecast.length) {
-        parts.push("\nPLANNED FUTURE COURSES (forecast):");
-        for (const c of forecast) {
-          parts.push(
-            "- " +
-              (c.semester || "unscheduled") +
-              ": " +
-              c.title +
-              " (" +
-              c.credits +
-              " cr)",
-          );
-        }
-      }
-    }
-
-    if (gpa && gpa.gpa !== null) {
-      parts.push(
-        "\nGPA: " +
-          gpa.gpa.toFixed(2) +
-          " (across " +
-          gpa.gradedCredits +
-          " graded credits)",
-      );
-    }
-
-    if (catalog && catalog.length) {
-      parts.push(
-        "\nCURRENT TERM CATALOG (" + catalog.length + " courses available):",
-      );
-      const catalogSummary = catalog
-        .slice(0, 50)
-        .map(
-          (c) =>
-            c.code +
-            ' "' +
-            c.title +
-            '" (' +
-            c.credits +
-            "cr, " +
-            c.sections.length +
-            " sections)",
-        )
-        .join("; ");
-      parts.push(catalogSummary);
-      if (catalog.length > 50)
-        parts.push("... and " + (catalog.length - 50) + " more.");
-    }
-
-    if (
-      currentSchedule &&
-      currentSchedule.sections &&
-      currentSchedule.sections.length
-    ) {
-      parts.push("\nCURRENT SELECTED SCHEDULE:");
-      for (const s of currentSchedule.sections) {
-        const meet = s.meetings
-          .map(
-            (m) =>
-              m.days.join("") +
-              " " +
-              minutesToHHMM(m.start) +
-              "-" +
-              minutesToHHMM(m.end),
-          )
-          .join(", ");
-        parts.push(
-          "- " +
-            s.courseCode +
-            " §" +
-            s.section +
-            " (" +
-            s.credits +
-            "cr): " +
-            meet,
-        );
-      }
-      const totalCr = currentSchedule.sections.reduce(
-        (a, s) => a + (parseFloat(s.credits) || 0),
-        0,
-      );
-      parts.push("Total: " + totalCr + " credits");
-    } else if (selectedCourseIds && selectedCourseIds.length && catalog) {
-      const selectedCourses = selectedCourseIds
-        .map((id) => catalog.find((c) => c.id === id))
-        .filter(Boolean);
-      if (selectedCourses.length) {
-        parts.push("\nSELECTED COURSES (no valid schedule yet):");
-        for (const c of selectedCourses) {
-          parts.push(
-            "- " + c.code + ' "' + c.title + '" (' + c.credits + "cr)",
-          );
-        }
-      }
-    }
-
-    if (!parts.length) return null;
-    return (
-      "Here is the student's current data in the ClassForge app. Reference this when giving advice — be specific about their actual situation.\n\n" +
-      parts.join("\n")
-    );
-  }
-
-  function clear() {
-    if (messages.length === 0) return;
-    if (confirm("Clear this conversation?")) setMessages([]);
-  }
-
-  return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <div className={"flex items-center justify-between px-6 pt-4 pb-2"}>
-        <div>
-          <h1 className="text-2xl font-bold">Advisor</h1>
-          <p className={"text-sm " + t.textDim}>
-            Chat with an AI assistant about your degree planning.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <label
-            className={
-              "text-xs flex items-center gap-1.5 cursor-pointer " +
-              (shareContext ? t.text : t.textMute)
-            }
-            title="When on, the AI sees your catalog, requirements, completed courses, and current schedule for personalized advice."
-          >
-            <input
-              type="checkbox"
-              checked={shareContext}
-              onChange={(e) => setShareContext(e.target.checked)}
-              className="accent-sky-500"
-            />
-            Share my data with the AI
-          </label>
-          {messages.length > 0 && (
-            <button
-              type="button"
-              onClick={clear}
-              className={
-                "text-xs px-2 py-1 rounded-md border " +
-                t.border2 +
-                " " +
-                (theme === "dark" ? "hover:bg-slate-800" : "hover:bg-slate-100")
-              }
-            >
-              Clear chat
-            </button>
-          )}
-          {onOpenTutorial && (
-            <HelpButton t={t} theme={theme} onClick={onOpenTutorial} />
-          )}
-        </div>
-      </div>
-
-      {!session ? (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div
-            className={
-              "max-w-md text-center rounded-lg border p-8 " +
-              t.border +
-              " " +
-              t.panel
-            }
-          >
-            <h2 className="text-lg font-semibold mb-2">
-              Sign in to use the Advisor
-            </h2>
-            <p className={"text-sm mb-4 " + t.textDim}>
-              The AI advisor is available to signed-in users. Your conversation
-              stays in your browser only.
-            </p>
-            <button
-              type="button"
-              onClick={onSignIn}
-              className={
-                "text-sm px-4 py-2 rounded-md font-semibold text-white " +
-                t.accentBg +
-                " " +
-                t.accentBgH
-              }
-            >
-              Sign in
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div
-            ref={scrollerRef}
-            className="flex-1 min-h-0 overflow-auto cf-scroll px-6 pb-2"
-          >
-            <div className="max-w-3xl mx-auto space-y-3 py-3">
-              {messages.length === 0 && (
-                <>
-                  <div
-                    className={
-                      "rounded-lg border p-3 text-xs " +
-                      t.border +
-                      " " +
-                      (theme === "dark"
-                        ? "bg-amber-500/5 text-amber-200"
-                        : "bg-amber-50 text-amber-900")
-                    }
-                  >
-                    <strong>Heads up:</strong> the Advisor uses Google Gemini&apos;s
-                    free tier. Google may use what you type to improve their AI
-                    models. Don&apos;t paste student ID numbers, full names, or other
-                    personal data you wouldn&apos;t share publicly.
-                  </div>
-                  <div
-                    className={
-                      "rounded-lg border p-6 text-sm " +
-                      t.border +
-                      " " +
-                      t.panel
-                    }
-                  >
-                    <div className="font-medium mb-2">Try asking:</div>
-                    <ul className={"space-y-1 " + t.textDim}>
-                      <li>
-                        · &quot;I&apos;m a CS junior. I have CS 350, MATH 220, and ENG 200
-                        picked. Is that too heavy?&quot;
-                      </li>
-                      <li>
-                        · &quot;What&apos;s the difference between taking calc with a
-                        2-prerequisite course vs alone?&quot;
-                      </li>
-                      <li>
-                        · &quot;I want at least one day off per week. What should I
-                        prioritize when picking sections?&quot;
-                      </li>
-                    </ul>
-                  </div>
-                </>
-              )}
-              {messages.map((m, i) => (
-                <ChatBubble
-                  key={i}
-                  t={t}
-                  theme={theme}
-                  role={m.role}
-                  content={m.content}
-                  attachments={m.attachments}
-                  truncated={m.truncated}
-                />
-              ))}
-              {busy && (
-                <ChatBubble
-                  t={t}
-                  theme={theme}
-                  role="assistant"
-                  content="…thinking"
-                  pending
-                />
-              )}
-              {error && (
-                <div
-                  className={
-                    "rounded-md border px-3 py-2 text-sm border-rose-500/50 bg-rose-500/10 text-rose-300"
-                  }
-                >
-                  {error}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className={"border-t " + t.border + " p-4"}>
-            <div className="max-w-3xl mx-auto">
-              {/* Attachment chips */}
-              {attachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {attachments.map((a) => (
-                    <div
-                      key={a.id}
-                      className={
-                        "flex items-center gap-2 rounded-md border px-2 py-1 text-xs " +
-                        t.border +
-                        " " +
-                        (theme === "dark" ? "bg-slate-800" : "bg-slate-100")
-                      }
-                    >
-                      <span
-                        title={a.name + " (" + formatBytes(a.sizeBytes) + ")"}
-                      >
-                        {a.kind === "image"
-                          ? "🖼"
-                          : a.kind === "pdf"
-                            ? "📄"
-                            : "📝"}{" "}
-                        {a.name.length > 32
-                          ? a.name.slice(0, 28) + "…" + a.name.slice(-4)
-                          : a.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeAttachment(a.id)}
-                        className={
-                          "w-5 h-5 rounded text-rose-400 " +
-                          (theme === "dark"
-                            ? "hover:bg-rose-500/10"
-                            : "hover:bg-rose-50")
-                        }
-                        title="Remove attachment"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {uploadError && (
-                <div
-                  className={
-                    "mb-2 rounded-md border px-3 py-2 text-xs border-amber-500/50 bg-amber-500/10 text-amber-200"
-                  }
-                >
-                  {uploadError}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".txt,.csv,.tsv,.json,.md,text/*,image/*,application/pdf"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    fileInputRef.current && fileInputRef.current.click()
-                  }
-                  disabled={busy || onCooldown}
-                  title="Attach a file (text, CSV, image, or PDF up to 5MB)"
-                  className={
-                    "self-end px-3 py-2 rounded-md border " +
-                    t.border2 +
-                    " " +
-                    (theme === "dark"
-                      ? "hover:bg-slate-800"
-                      : "hover:bg-slate-100") +
-                    " disabled:opacity-40"
-                  }
-                >
-                  📎
-                </button>
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      send();
-                    }
-                  }}
-                  placeholder={
-                    onCooldown
-                      ? "Cooling down… come back in " + cooldownSeconds + "s"
-                      : "Ask about your schedule, attach a file, or paste your transcript… (Enter to send, Shift+Enter for newline)"
-                  }
-                  rows={2}
-                  className={
-                    "flex-1 rounded-md border px-3 py-2 text-sm resize-none " +
-                    t.input +
-                    (onCooldown ? " opacity-60" : "")
-                  }
-                  disabled={busy || onCooldown}
-                />
-                <button
-                  type="button"
-                  onClick={send}
-                  disabled={
-                    busy || onCooldown || (!input.trim() && !attachments.length)
-                  }
-                  className={
-                    "px-4 py-2 rounded-md font-semibold text-white " +
-                    t.accentBg +
-                    " " +
-                    t.accentBgH +
-                    " disabled:opacity-40 self-end whitespace-nowrap"
-                  }
-                >
-                  {onCooldown ? "Wait " + cooldownSeconds + "s" : "Send"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function ChatBubble({
-  t,
-  theme,
-  role,
-  content,
-  pending,
-  attachments,
-  truncated,
-}) {
-  const isUser = role === "user";
-  return (
-    <div className={"flex " + (isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={
-          "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap leading-relaxed " +
-          (isUser
-            ? theme === "dark"
-              ? "bg-sky-600 text-white"
-              : "bg-sky-600 text-white"
-            : theme === "dark"
-              ? "bg-slate-800 text-slate-100"
-              : "bg-slate-100 text-slate-900") +
-          (pending ? " opacity-60 italic" : "")
-        }
-      >
-        {attachments && attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-1.5">
-            {attachments.map((a, i) => (
-              <span
-                key={i}
-                className={
-                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs " +
-                  (isUser
-                    ? "bg-sky-700/50"
-                    : theme === "dark"
-                      ? "bg-slate-700"
-                      : "bg-slate-200")
-                }
-              >
-                {a.kind === "image" ? "🖼" : a.kind === "pdf" ? "📄" : "📝"}{" "}
-                {a.name}
-              </span>
-            ))}
-          </div>
-        )}
-        {content}
-        {truncated && (
-          <div
-            className={
-              "mt-2 pt-2 text-xs italic " +
-              (theme === "dark"
-                ? "border-t border-slate-600 text-amber-300"
-                : "border-t border-slate-300 text-amber-600")
-            }
-          >
-            (Response was cut off - ask the AI to &quot;continue&quot; for the rest.)
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// Feedback tab — text-only reviews
-// ============================================================
-function FeedbackTab({ t, theme, session, onSignIn, onOpenTutorial }) {
-  const [reviews, setReviews] = useState([]);
-  const [body, setBody] = useState("");
-  const [authorLabel, setAuthorLabel] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [status, setStatus] = useState(null);
-
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    loadReviews().then((rs) => {
-      if (mounted) {
-        setReviews(rs);
-        setLoading(false);
-      }
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  async function submit() {
-    if (!session?.user?.id) {
-      onSignIn();
-      return;
-    }
-    if (!body.trim()) return;
-    setSubmitting(true);
-    setStatus(null);
-    const { data, error } = await submitReview({
-      userId: session.user.id,
-      body,
-      authorLabel,
-    });
-    setSubmitting(false);
-    if (error) {
-      const isModeration =
-        error.message &&
-        (error.message.includes("protected group") ||
-          error.message.includes("threat") ||
-          error.message.includes("violates our policy"));
-      setStatus({
-        kind: "error",
-        text: isModeration
-          ? error.message
-          : "Could not submit: " + error.message,
-      });
-      return;
-    }
-    setStatus({ kind: "ok", text: "Thanks for the feedback!" });
-    setBody("");
-    if (data) setReviews((prev) => [data, ...prev]);
-    setTimeout(() => setStatus(null), 3000);
-  }
-
-  async function remove(id) {
-    if (!confirm("Delete this review?")) return;
-    const { error } = await deleteReview(id);
-    if (error) {
-      alert("Could not delete: " + error.message);
-      return;
-    }
-    setReviews((prev) => prev.filter((r) => r.id !== id));
-  }
-
-  return (
-    <div className="flex-1 min-h-0 overflow-auto cf-scroll p-6">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-start justify-between mb-1">
-          <h1 className="text-2xl font-bold">Feedback</h1>
-          {onOpenTutorial && (
-            <HelpButton t={t} theme={theme} onClick={onOpenTutorial} />
-          )}
-        </div>
-        <p className={"text-sm mb-6 " + t.textDim}>
-          Tell us what you think of ClassForge. Words only — no stars or
-          rankings. Your review is visible to other ClassForge users.
-        </p>
-
-        <div
-          className={"rounded-lg border p-4 mb-6 " + t.border + " " + t.panel}
-        >
-          {!session ? (
-            <div className="text-center py-4">
-              <p className={"text-sm mb-3 " + t.textDim}>
-                Sign in to post a review.
-              </p>
-              <button
-                type="button"
-                onClick={onSignIn}
-                className={
-                  "text-sm px-4 py-2 rounded-md font-semibold text-white " +
-                  t.accentBg +
-                  " " +
-                  t.accentBgH
-                }
-              >
-                Sign in
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-12 gap-2 mb-3">
-                <input
-                  value={authorLabel}
-                  onChange={(e) => setAuthorLabel(e.target.value)}
-                  placeholder="Display name (optional, defaults to 'anonymous')"
-                  maxLength={60}
-                  className={
-                    "col-span-12 rounded border px-3 py-2 text-sm " + t.input
-                  }
-                />
-              </div>
-              <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="What did you think? What worked, what didn't, what should we add?"
-                rows={4}
-                maxLength={5000}
-                className={"w-full rounded border px-3 py-2 text-sm " + t.input}
-              />
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <span className={"text-xs " + t.textMute}>
-                  {body.length} / 5000 characters
-                </span>
-                <button
-                  type="button"
-                  onClick={submit}
-                  disabled={submitting || !body.trim()}
-                  className={
-                    "text-sm px-4 py-2 rounded-md font-semibold text-white " +
-                    t.accentBg +
-                    " " +
-                    t.accentBgH +
-                    " disabled:opacity-40"
-                  }
-                >
-                  {submitting ? "Submitting…" : "Submit review"}
-                </button>
-              </div>
-              {status && (
-                <div
-                  className={
-                    "mt-3 rounded-md border px-3 py-2 text-sm " +
-                    (status.kind === "ok"
-                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                      : "border-rose-500/50 bg-rose-500/10 text-rose-300")
-                  }
-                >
-                  {status.text}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        <h2 className="font-semibold mb-3">
-          Recent reviews ({reviews.length})
-        </h2>
-        {loading && <div className={"text-sm " + t.textDim}>Loading…</div>}
-        {!loading && reviews.length === 0 && (
-          <div className={"text-sm " + t.textDim}>
-            No reviews yet. Be the first.
-          </div>
-        )}
-        <ul className="space-y-3">
-          {reviews.map((r) => {
-            const isMine = session?.user?.id && r.user_id === session.user.id;
-            const when = r.created_at
-              ? new Date(r.created_at).toLocaleDateString()
-              : "";
-            return (
-              <li
-                key={r.id}
-                className={"rounded-lg border p-4 " + t.border + " " + t.panel}
-              >
-                <div className="flex items-baseline justify-between mb-2">
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-medium text-sm">
-                      {r.author_label || "anonymous"}
-                    </span>
-                    <span className={"text-xs " + t.textMute}>{when}</span>
-                  </div>
-                  {isMine && (
-                    <button
-                      type="button"
-                      onClick={() => remove(r.id)}
-                      className={
-                        "text-xs w-6 h-6 rounded border border-rose-500/40 text-rose-400 " +
-                        (theme === "dark"
-                          ? "hover:bg-rose-500/10"
-                          : "hover:bg-rose-50")
-                      }
-                      title="Delete your review"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-                <p className={"text-sm whitespace-pre-wrap " + t.text}>
-                  {r.body}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
 // GPA card
 // ============================================================
 function GPACard({ t, theme, gpa, highlightCourseId, setHighlightCourseId }) {
@@ -4364,8 +3321,9 @@ function SemesterGrid({
           t.textDim
         }
       >
-        No courses yet. Upload a transcript above, add manually, or generate
-        forecasts.
+        No completed courses yet. Upload a transcript above or add a course by
+        hand, and your credits, GPA and remaining requirements will appear
+        here.
       </div>
     );
   }
@@ -5044,6 +4002,279 @@ function RequirementRow({ t, theme, req, cat, onUpdate, onRemove }) {
 }
 
 // ============================================================
+// First-visit welcome + sample-data pieces
+// ============================================================
+function SampleChip({ t }) {
+  return (
+    <span
+      className={
+        "text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border shrink-0 " +
+        t.chipOn
+      }
+    >
+      Sample
+    </span>
+  );
+}
+
+function SampleBanner({ t, theme, onClear }) {
+  return (
+    <div
+      role="status"
+      className={
+        "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-xs border-b " +
+        (theme === "dark"
+          ? "bg-amber-500/10 border-amber-500/30 text-amber-200"
+          : "bg-amber-50 border-amber-300 text-amber-900")
+      }
+    >
+      <span className="flex-1 min-w-0">
+        <strong>Sample data.</strong> These are fictional courses so you can see
+        how ClassForge works. Clear them when you are ready to add your own.
+      </span>
+      <button
+        type="button"
+        onClick={onClear}
+        className={
+          "px-2.5 py-1 rounded-md border font-semibold " +
+          (theme === "dark"
+            ? "border-amber-400/50 hover:bg-amber-500/20"
+            : "border-amber-500 hover:bg-amber-100")
+        }
+      >
+        Clear sample data
+      </button>
+    </div>
+  );
+}
+
+const WELCOME_STEPS = [
+  {
+    title: "Add your courses",
+    body: "Upload your school's catalog or type courses in by hand.",
+  },
+  {
+    title: "Block your busy times",
+    body: "Drag on the calendar to mark work, practice or anything else.",
+  },
+  {
+    title: "Pick a schedule that fits",
+    body: "Flip through every combination with no time conflicts and save the one you like.",
+  },
+];
+
+function WelcomeIntro({
+  t,
+  theme,
+  open,
+  isGuest,
+  onClose,
+  onTrySample,
+  onAddOwn,
+  onOpenTutorial,
+}) {
+  const dialogRef = useRef(null);
+  const primaryRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previouslyFocused = document.activeElement;
+    primaryRef.current?.focus();
+    return () => {
+      if (previouslyFocused && typeof previouslyFocused.focus === "function") {
+        previouslyFocused.focus();
+      }
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  function onKeyDown(e) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const focusable = dialogRef.current?.querySelectorAll(
+      'button, a[href], [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable || !focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.6)" }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={onKeyDown}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cf-welcome-title"
+        aria-describedby="cf-welcome-desc"
+        className={
+          "rounded-xl border shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto " +
+          t.border +
+          " " +
+          t.panel
+        }
+      >
+        <div className="flex items-start justify-between gap-3 px-5 pt-5">
+          <div>
+            <div className={"text-xs font-semibold uppercase tracking-wide " + t.accent}>
+              Welcome to {BRAND.name}
+            </div>
+            <h2
+              id="cf-welcome-title"
+              className="mt-1 text-xl sm:text-2xl font-bold leading-snug"
+            >
+              Build a conflict-free class schedule in minutes
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close welcome"
+            className={
+              "text-2xl leading-none px-2 -mr-2 rounded " +
+              t.textDim +
+              " " +
+              (theme === "dark"
+                ? "hover:text-slate-100"
+                : "hover:text-slate-900")
+            }
+          >
+            ×
+          </button>
+        </div>
+        <p
+          id="cf-welcome-desc"
+          className={"px-5 mt-2 text-sm leading-relaxed " + t.textDim}
+        >
+          Tell {BRAND.name} which courses you need and when you are busy, and it
+          shows every schedule that fits with no time conflicts.
+        </p>
+        <ol className="px-5 mt-4 space-y-3">
+          {WELCOME_STEPS.map((step, i) => (
+            <li key={step.title} className="flex gap-3">
+              <span
+                aria-hidden="true"
+                className={
+                  "shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold text-white " +
+                  t.accentBg
+                }
+              >
+                {i + 1}
+              </span>
+              <div>
+                <div className="font-semibold text-sm">{step.title}</div>
+                <div className={"text-sm " + t.textDim}>{step.body}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <div className="px-5 mt-5 flex flex-col sm:flex-row gap-2">
+          {isGuest ? (
+            <>
+              <button
+                type="button"
+                ref={primaryRef}
+                onClick={onTrySample}
+                className={
+                  "flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold text-white " +
+                  t.accentBg +
+                  " " +
+                  t.accentBgH
+                }
+              >
+                Try it with sample courses
+              </button>
+              <button
+                type="button"
+                onClick={onAddOwn}
+                className={
+                  "flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold border " +
+                  t.border2 +
+                  " " +
+                  (theme === "dark"
+                    ? "hover:bg-slate-800"
+                    : "hover:bg-slate-100")
+                }
+              >
+                Add my own courses
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                ref={primaryRef}
+                onClick={onAddOwn}
+                className={
+                  "flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold text-white " +
+                  t.accentBg +
+                  " " +
+                  t.accentBgH
+                }
+              >
+                Add my courses in Data Manager
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className={
+                  "flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold border " +
+                  t.border2 +
+                  " " +
+                  (theme === "dark"
+                    ? "hover:bg-slate-800"
+                    : "hover:bg-slate-100")
+                }
+              >
+                Close
+              </button>
+            </>
+          )}
+        </div>
+        <div
+          className={
+            "px-5 py-4 mt-1 text-xs leading-relaxed flex flex-wrap items-center justify-between gap-x-4 gap-y-1 " +
+            t.textDim
+          }
+        >
+          <span>
+            {isGuest
+              ? "No sign-in needed. Everything you add stays in this browser. Sample courses are fictional."
+              : "Reopen this any time from the ? button in Builder."}
+          </span>
+          <button
+            type="button"
+            onClick={onOpenTutorial}
+            className={"underline " + t.accent}
+          >
+            Full Builder tutorial
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // Help button + Tutorial overlay
 // ============================================================
 function HelpButton({ t, theme, onClick }) {
@@ -5250,7 +4481,7 @@ const TUTORIALS = {
     steps: [
       {
         heading: "Upload a course catalog",
-        body: "Drop a CSV, TSV, JSON, or PDF file with your school's course offerings. The format guide at the bottom shows exactly what columns are required. Your catalog never leaves your account.",
+        body: "Drop a CSV, TSV, JSON, or PDF file with your school's course offerings. The format guide at the bottom shows exactly what columns are required. Your catalog stays in this browser; it is never uploaded.",
       },
       {
         heading: "Add courses manually",
@@ -5300,52 +4531,6 @@ const TUTORIALS = {
       {
         heading: "Overload warnings",
         body: 'Set the overload threshold next to the Forecast button. Any semester (forecast or completed) that exceeds your threshold gets a yellow "⚠ overloaded" tag in its header — a gentle warning that you\'re planning a heavy term. You can absolutely overload on purpose; the tag just makes it visible.',
-      },
-    ],
-  },
-  advisor: {
-    title: "Advisor — chat with an AI to plan your degree",
-    steps: [
-      {
-        heading: "What this tab is for",
-        body: "The Advisor is an AI assistant trained to help with academic planning: choosing courses, balancing workload, prerequisites, deciding between sections. Think of it as a brainstorming partner, not a replacement for your real academic advisor.",
-      },
-      {
-        heading: "Sign in to chat",
-        body: "You'll need to be signed in to use the Advisor. This is so we can keep track of usage and so the chat works against the paid tier.",
-      },
-      {
-        heading: "How to ask good questions",
-        body: "The Advisor doesn't see your actual schedule unless you paste it. So tell it: your major, year, and what you're trying to figure out. Example: \"I'm a CS sophomore, I have CS 101, MATH 110, and ENG 102 selected for next term — is that too heavy?\"",
-      },
-      {
-        heading: "What it can't do",
-        body: "The Advisor cannot register you for classes, see your grades unless you share them, or guarantee anything about graduation requirements. Always confirm specifics with your school's real advisor.",
-      },
-      {
-        heading: "Privacy",
-        body: "Your messages are sent to Google's Gemini API to generate responses. They are not shared with other ClassForge users. Important: this app uses the Gemini free tier, which means Google may use your conversation contents to improve their AI models — do not paste sensitive personal information. The chat history is held in your browser only and clears on refresh.",
-      },
-    ],
-  },
-  feedback: {
-    title: "Feedback — share your experience with ClassForge",
-    steps: [
-      {
-        heading: "What this tab is for",
-        body: "Leave a written review about ClassForge. What worked, what didn't, what feature you wish existed. Your review is visible to other ClassForge users.",
-      },
-      {
-        heading: "Sign in to post",
-        body: "You need to be signed in to post a review. You can read other reviews without signing in.",
-      },
-      {
-        heading: "Be honest",
-        body: "There's no star rating system here on purpose — words are more useful than numbers. Tell us what would actually make the app better for you.",
-      },
-      {
-        heading: "You can delete your own",
-        body: "Each review you post has a small × button next to it. That removes your own review. You cannot edit or delete other people's reviews.",
       },
     ],
   },

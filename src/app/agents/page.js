@@ -1,29 +1,19 @@
-import AgentLab from './AgentLab';
-import { isPosOwner } from '@/lib/pos/access';
-import { getAuthenticatedUser } from '@/lib/supabase/api-auth';
-import { redirect } from 'next/navigation';
-import { buildMetadata, SITE_NAME } from '../../lib/seo.js';
+import PageShell, { P } from '../../components/PageShell';
+import { buildMetadata } from '../../lib/seo.js';
+import { NOT_AVAILABLE_MESSAGE } from '../../lib/openVersion.js';
 
 export const metadata = buildMetadata({
   title: 'Agent Lab',
-  description:
-    'Multi-agent operating system prototype for autonomous company workflows.',
+  description: 'Agent Lab is not available in the open version of ClassForge.',
   path: '/agents',
   noindex: true,
 });
 
-export const dynamic = 'force-dynamic';
-
-export default async function Page() {
-  const user = await getAuthenticatedUser();
-
-  if (!user) {
-    redirect('/login?next=%2Fagents');
-  }
-
-  if (!isPosOwner(user)) {
-    redirect('/');
-  }
-
-  return <AgentLab />;
+export default function Page() {
+  return (
+    <PageShell title="Agent Lab">
+      <P>{NOT_AVAILABLE_MESSAGE}</P>
+      <P>The schedule builder, saved schedules and My Record all work in your browser.</P>
+    </PageShell>
+  );
 }

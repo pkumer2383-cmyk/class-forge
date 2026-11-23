@@ -169,7 +169,7 @@ export function getDefaultAgents() {
           'Use explicit run states so failed, blocked, approved, and completed runs can be audited later.',
         ],
         concerns: [
-          'Supabase table and RLS setup must be verified before treating persistence as complete.',
+          'Storage setup must be verified before treating persistence as complete.',
           ...(input.maxIterations > 3 ? ['Large iteration caps can burn tokens and obscure decision ownership.'] : []),
         ],
         assumptions: ['MVP users are authenticated or operating in trusted local development.'],

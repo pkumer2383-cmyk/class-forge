@@ -1,6 +1,6 @@
 // src/components/PageShell.js
 // Shared shell for About/Contact/Privacy/Terms pages.
-// Same fonts and theme palette as the main app, but standalone (no auth, no Supabase).
+// Same fonts and theme palette as the main app, but standalone.
 'use client';
 
 import Image from 'next/image';

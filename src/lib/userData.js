@@ -1,7 +1,10 @@
 // src/lib/userData.js
-import { supabase } from './supabase';
+// ClassForge keeps every bit of a student's data in this browser's
+// localStorage. There are no accounts and no server-side database.
 
-const TABLE = 'user_data';
+// Same key the guest draft used before the open version, so anything a guest
+// already built carries over.
+export const LOCAL_DATA_KEY = 'class-forge.guest-draft.v1';
 
 const DEFAULT = {
   catalog: [],
@@ -26,70 +29,44 @@ const DEFAULT = {
   course_colors: {},
 };
 
-// Pull the actually-useful fields out of a Supabase error so console.error
-// shows the real message instead of "{}"
-function describeError(err) {
-  if (!err) return '(no error)';
-  return {
-    message: err.message || '(no message)',
-    code: err.code || '(no code)',
-    details: err.details || '(no details)',
-    hint: err.hint || '(no hint)',
-    status: err.status || '(no status)',
-  };
+function defaultStorage() {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null;
+  } catch {
+    return null;
+  }
 }
 
-export async function loadUserData(userId) {
-  if (!userId) return { ...DEFAULT };
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (error && error.code !== 'PGRST116') {
-    console.error('[loadUserData] error', describeError(error));
+// Returns the stored snapshot, or null when nothing (or nothing readable) is stored.
+export function loadLocalUserData(storage = defaultStorage()) {
+  try {
+    const raw = storage?.getItem(LOCAL_DATA_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const data = parsed?.data;
+    if (!data || typeof data !== 'object') return null;
+    return {
+      ...DEFAULT,
+      ...data,
+      preferences: { ...DEFAULT.preferences, ...(data.preferences || {}) },
+    };
+  } catch {
+    return null;
   }
-  if (!data) return { ...DEFAULT };
-  return {
-    catalog:           data.catalog           ?? DEFAULT.catalog,
-    curriculum:        data.curriculum        ?? DEFAULT.curriculum,
-    selected_courses:  data.selected_courses  ?? DEFAULT.selected_courses,
-    enabled_sections:  data.enabled_sections  ?? DEFAULT.enabled_sections,
-    blocked_times:     data.blocked_times     ?? DEFAULT.blocked_times,
-    preferences:       { ...DEFAULT.preferences, ...(data.preferences || {}) },
-    saved_schedules:   data.saved_schedules   ?? DEFAULT.saved_schedules,
-    degree_tracker:    data.degree_tracker    ?? DEFAULT.degree_tracker,
-    completed_courses: data.completed_courses ?? DEFAULT.completed_courses,
-    course_tags:       data.course_tags       ?? DEFAULT.course_tags,
-    course_colors:     data.course_colors     ?? DEFAULT.course_colors,
-  };
 }
 
-export async function saveUserData(userId, payload) {
-  if (!userId) return { error: new Error('no userId') };
-  const row = {
-    user_id: userId,
-    catalog:           payload.catalog           ?? null,
-    curriculum:        payload.curriculum        ?? null,
-    selected_courses:  payload.selected_courses  ?? null,
-    enabled_sections:  payload.enabled_sections  ?? null,
-    blocked_times:     payload.blocked_times     ?? null,
-    preferences:       payload.preferences       ?? null,
-    saved_schedules:   payload.saved_schedules   ?? null,
-    degree_tracker:    payload.degree_tracker    ?? null,
-    completed_courses: payload.completed_courses ?? null,
-    course_tags:       payload.course_tags       ?? null,
-    course_colors:     payload.course_colors     ?? null,
-    updated_at:        new Date().toISOString(),
-  };
-  const { error } = await supabase
-    .from(TABLE)
-    .upsert(row, { onConflict: 'user_id' });
-  if (error) {
-    console.error('[saveUserData] error', describeError(error));
-    console.error('[saveUserData] row keys sent:', Object.keys(row));
+// Returns true when the write succeeded (storage can be full or blocked).
+export function saveLocalUserData(data, storage = defaultStorage()) {
+  try {
+    if (!storage) return false;
+    storage.setItem(
+      LOCAL_DATA_KEY,
+      JSON.stringify({ savedAt: new Date().toISOString(), data }),
+    );
+    return true;
+  } catch {
+    return false;
   }
-  return { error };
 }
 
 export const DEFAULT_USER_DATA = DEFAULT;

@@ -3,7 +3,7 @@
 Thanks for helping out.
 
 1. Fork the repo and create a branch from `main`.
-2. `npm ci`, copy `.env.example` to `.env.local`, and point it at your own Supabase project.
+2. `npm ci`, and optionally copy `.env.example` to `.env.local`. No database or API keys are needed.
 3. Keep changes small and focused. Add or update tests in `tests/unit/` for behaviour changes.
 4. Before opening a pull request, run `npm test`, `npm run lint` and `npm run build`.
 5. Never commit secrets, `.env*` files (other than `.env.example`), build output, or real user or student data.

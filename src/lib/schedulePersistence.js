@@ -1,6 +1,6 @@
 // Pure schedule snapshot helpers used by the ClassForge save/retrieve journey.
 // Keeping these transformations outside the React component makes them
-// testable without a browser, Supabase, or private student data.
+// testable without a browser or private student data.
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
