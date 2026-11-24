@@ -124,7 +124,7 @@ test('telemetry summarizes the run in a structured packet', () => {
       { eventType: 'final_plan_recorded' },
     ],
     consensusRounds: [{}, {}],
-    persistence: { mode: 'supabase', durable: true, retryCount: 1 },
+    persistence: { mode: 'database', durable: true, retryCount: 1 },
     retryCount: 1,
     startedAt: '2026-06-06T00:00:00.000Z',
   });
@@ -194,8 +194,8 @@ test('Chief Operating Agent status includes required ClassForge sections', () =>
             state: 'completed',
           },
         ],
-        nextActions: ['Apply the Supabase POS migration.'],
-        risks: ['Durable audit history depends on Supabase migration status.'],
+        nextActions: ['Apply the database POS migration.'],
+        risks: ['Durable audit history depends on database migration status.'],
         openQuestions: ['Which task manager should receive delegated work?'],
       },
       generatedAt: '2026-06-06T00:00:00.000Z',
@@ -217,7 +217,7 @@ test('Chief Operating Agent status includes required ClassForge sections', () =>
   assert.ok(status.decisionsNeeded.length >= 1);
   assert.ok(status.delegatedWork.some((work) => work.ownerAgent === 'ClassForge Project Manager Agent'));
   assert.equal(status.delegatedWork.some((work) => work.ownerAgent === 'Execution Agent'), false);
-  assert.ok(status.risksBlockers.some((risk) => risk.includes('Supabase')));
+  assert.ok(status.risksBlockers.some((risk) => risk.includes('database')));
   assert.ok(status.recommendedNextActions.length >= 3);
   assert.ok(status.codexReadyTasks.every((task) => task.prompt && task.targetRepo));
   assert.ok(status.obsidianNotesToUpdate.some((note) => note.path.includes('class-forge')));
