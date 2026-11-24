@@ -18,9 +18,9 @@ function makeSubmission(overrides = {}) {
     ideaSummary:
       'A reusable service for the broader agent ecosystem with deterministic validation stages and structured verdicts.',
     successMetrics: ['Produces EXECUTE, REVISE, or ABANDON verdicts', 'Persists results when signed in'],
-    knownConstraints: ['Use the existing Next.js and Supabase stack', 'Do not hardcode secrets'],
+    knownConstraints: ['Use the existing Next.js stack', 'Do not hardcode secrets'],
     keyAssumptions: ['The current app can host the service'],
-    evidence: ['Existing POS runtime and Supabase auth already exist'],
+    evidence: ['Existing POS runtime already exists'],
     targetAudience: 'Forge internal operators',
     timeline: 'Immediate',
     budget: 'Low',
